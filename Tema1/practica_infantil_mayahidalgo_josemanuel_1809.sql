@@ -91,6 +91,8 @@ el coste salarial de cada uno de ellos. Puedes usar la función del ejercicio 3.
 select * from DEPT
 select * from EMP
 
+-- Sin Cursor
+
 create or alter procedure MostrarCostesSalariales as
 begin
 	select d.dname as [Nombre de Departamento], (sum(isnull(e.sal, 0)) + sum(isnull(e.COMM, 0))) as [Coste Salarial] from dept as d
@@ -98,6 +100,40 @@ begin
 	on d.deptno = e.deptno
 	group by d.dname
 end
+
+-- Sin Cursor
+
+-- Con Cursor
+
+create or alter procedure MostrarCostesSalariales as
+begin
+	declare @DeptNo int
+	declare @DeptName varchar(50)
+	declare @CosteSalarial money;
+
+	declare cur_dept cursor for select deptno, dname from dept;
+
+	open cur_dept;
+	fetch next from cur_dept into @DeptNo, @DeptName;
+
+	while @@FETCH_STATUS = 0
+	begin
+		
+		select @CosteSalarial = sum(isnull(sal,0) + isnull(comm, 0)) from emp
+		where deptno = @DeptNo
+
+		print 'Departamento: ' + @DeptName + '| Coste Salarial: ' + cast(@CosteSalarial as varchar(20))
+	
+		fetch next from cur_dept into @DeptNo, @DeptName;
+	end
+
+	close cur_dept;
+	deallocate cur_dept;
+end
+
+-- Con Cursor
+
+execute MostrarCostesSalariales
 
 /*
 Ejercicio 5
@@ -119,7 +155,16 @@ Realiza un procedimiento MostrarMasAntiguos que muestre el nombre del empleado m
 junto con el nombre del departamento. Trata las excepciones que consideres necesarias.
 */
 
+select * from EMP
 
+select * from DEPT
+
+create or alter procedure MostrarMasAntiguos as
+begin
+
+	
+
+end
 
 /*
 Ejercicio 7 CR
