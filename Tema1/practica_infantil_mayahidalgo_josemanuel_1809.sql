@@ -162,16 +162,37 @@ select * from DEPT
 create or alter procedure MostrarMasAntiguos as
 begin
 
+	declare @DeptNo int
+	declare @DeptName varchar(30)
+	declare @EmpName varchar(30)
 	
+	declare cur_empant cursor for select deptno, dname from dept;
 
+	open cur_empant
+	fetch next from cur_empant into @DeptNo, @DeptName;
+
+	while @@FETCH_STATUS = 0
+	begin
+		
+		select TOP 1 @EmpName = ENAME from EMP where DEPTNO = @DeptNo order by HIREDATE ASC
+
+		print 'Departamento: ' + @DeptName + '| Empleado mas Antiguo: ' + @EmpName
+	
+		fetch next from cur_empant into @DeptNo, @DeptName;
+	end
+	close cur_empant;
+	deallocate cur_empant;
 end
 
+execute MostrarMasAntiguos
 /*
 Ejercicio 7 CR
 
 Realiza un procedimiento MostrarJefes que reciba el nombre de un departamento y muestre los nombres de los empleados 
 de ese departamento que son jefes de otros empleados.Trata las excepciones que consideres necesarias.
 */
+
+
 
 /*
 Ejercicio 8
