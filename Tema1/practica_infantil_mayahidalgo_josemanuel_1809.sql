@@ -192,7 +192,74 @@ Realiza un procedimiento MostrarJefes que reciba el nombre de un departamento y 
 de ese departamento que son jefes de otros empleados.Trata las excepciones que consideres necesarias.
 */
 
+create procedure mostrarjefes
+    @dptoname varchar(14)
+as
+begin
+    -- declaración de variables
+    declare @deptno int;
+    declare @jefenombre varchar(10);
+    declare @jefesencontrados int = 0;
 
+    -- 1. validar que el departamento exista y obtener su deptno
+    select @deptno = deptno
+    from dept
+    where dname = @dptoname;
+
+    if @deptno is null
+    begin
+        -- excepción: departamento no encontrado
+        raiserror('error: el departamento ''%s'' no existe.', 16, 1, @dptoname);
+        return;
+    end
+
+    -- 2. declarar el cursor
+    declare jefescursor cursor for
+    select distinct e.ename
+    from emp e
+    inner join dept d on e.deptno = d.deptno
+    where d.dname = @dptoname
+      and e.empno in (select mgr from emp where mgr is not null); -- solo empleados que son mgr de alguien
+
+    -- abrir el cursor
+    open jefescursor;
+
+    -- obtener el primer jefe
+    fetch next from jefescursor into @jefenombre;
+
+    -- 3. recorrer el cursor
+    while @@fetch_status = 0
+    begin
+        -- mostrar el nombre del jefe
+        print 'jefe encontrado: ' + @jefenombre;
+        set @jefesencontrados = @jefesencontrados + 1;
+        
+        -- obtener el siguiente jefe
+        fetch next from jefescursor into @jefenombre;
+    end
+
+    -- cerrar y liberar el cursor
+    close jefescursor;
+    deallocate jefescursor;
+
+    -- 4. manejo de excepciones: no hay jefes en ese departamento
+    if @jefesencontrados = 0
+    begin
+        print 'aviso: no se encontraron empleados que sean jefes en el departamento de ' + @dptoname + '.';
+    end
+end
+
+-- Prueba 1: Departamento con jefes (ej. research)
+exec mostrarjefes 'RESEARCH';
+-- Salida esperada: JONES, SCOTT, FORD
+
+-- Prueba 2: Departamento sin jefes (ej. operations)
+exec mostrarjefes 'OPERATIONS';
+-- Salida esperada: aviso de no encontrados
+
+-- Prueba 3: Departamento inexistente
+exec mostrarjefes 'IT';
+-- Salida esperada: error (raiserror)
 
 /*
 Ejercicio 8
@@ -232,13 +299,121 @@ Realiza un procedimiento RecortarSueldos que recorte el sueldo un 20% a los empl
 empiece por la letra que recibe como parámetro.Trata las excepciones  que consideres necesarias
 */
 
-create or alter procedure RecortarSueldos @letra char as
+create procedure recortarsueldos
+    @letrainicial char(1)
+as
 begin
-	
+    -- declaración de variables
+    declare @filasafectadas int;
+
+    -- 1. manejo de excepción: parámetro nulo o vacío
+    if @letrainicial is null or @letrainicial = ''
+    begin
+        raiserror('error: debe proporcionar una letra inicial válida.', 16, 1);
+        return;
+    end
+
+    -- 2. realizar la actualización basada en conjuntos (sin cursor)
+    update emp
+    set sal = sal * 0.80  -- reduce el salario en un 20%
+    where ename like @letrainicial + '%';
+
+    -- obtener el número de filas actualizadas
+    set @filasafectadas = @@rowcount;
+
+    -- 3. manejo de excepción: empleados no encontrados
+    if @filasafectadas = 0
+    begin
+        print 'aviso: no se encontraron empleados cuyo nombre empiece por la letra "' + @letrainicial + '". no se realizó ninguna actualización.';
+    end
+    else
+    begin
+        print 'éxito: se han actualizado ' + cast(@filasafectadas as varchar) + ' empleado(s). el sueldo se ha reducido un 20% para los que empiezan por "' + @letrainicial + '".';
+    end
 end
+
+-- Verificar salarios ANTES
+select ename, sal from emp where ename like 'A%';
+
+-- Ejecutar el procedimiento
+exec recortarsueldos 'A';
+
+-- Verificar salarios DESPUÉS (Debe ser 1280.00 y 880.00)
+select ename, sal from emp where ename like 'A%';
 
 /*
 Ejercicio 11 cr
  
 Realiza un procedimiento BorrarBecarios que borre a los dos empleados más nuevos de cada departamento. Trata las excepciones que consideres necesarias.
 */
+
+create procedure borrarbecarios
+as
+begin
+    -- variables del cursor y contadores
+    declare @deptno_actual int;
+    declare @dname_actual varchar(14);
+    declare @borrados_en_dpto int;
+    declare @borrados_totales int = 0;
+
+    -- declaración del cursor principal
+    -- este cursor recorre todos los departamentos que tienen al menos un empleado
+    declare dptocursor cursor for
+    select distinct e.deptno, d.dname
+    from emp e
+    inner join dept d on e.deptno = d.deptno;
+
+    -- abrir el cursor
+    open dptocursor;
+
+    -- obtener el primer departamento
+    fetch next from dptocursor into @deptno_actual, @dname_actual;
+
+    -- recorrer los departamentos
+    while @@fetch_status = 0
+    begin
+        
+        -- lógica de borrado (basada en conjunto):
+        -- encuentra y borra los EMPNO que tienen el TOP 2 en HIREDATE descendente
+        delete from emp
+        where empno in (
+            select top (2) empno
+            from emp
+            where deptno = @deptno_actual
+            order by hiredate desc
+        );
+
+        -- contar y registrar los empleados borrados en este departamento
+        set @borrados_en_dpto = @@rowcount;
+        set @borrados_totales = @borrados_totales + @borrados_en_dpto;
+
+        -- manejar la retroalimentación
+        if @borrados_en_dpto = 2
+            print 'éxito: 2 empleados más nuevos borrados en el dpto. ' + @dname_actual + '.';
+        else if @borrados_en_dpto = 1
+            print 'aviso: solo 1 empleado borrado (el dpto. tenía menos de 2) en ' + @dname_actual + '.';
+        else
+            print 'aviso: no se encontraron empleados para borrar en ' + @dname_actual + '.';
+        
+        -- obtener el siguiente departamento
+        fetch next from dptocursor into @deptno_actual, @dname_actual;
+    end
+
+    -- cerrar y liberar el cursor
+    close dptocursor;
+    deallocate dptocursor;
+
+    -- manejo de excepción final
+    if @borrados_totales = 0
+    begin
+        raiserror('aviso: la tabla de empleados está vacía o no se pudo realizar ninguna eliminación.', 10, 1);
+    end
+end
+
+-- Consultar los empleados ANTES de la ejecución:
+select ename, deptno, hiredate from emp order by deptno, hiredate desc;
+
+exec borrarbecarios;
+
+-- Verificar los empleados restantes:
+select ename, deptno, hiredate from emp order by deptno, hiredate desc;
