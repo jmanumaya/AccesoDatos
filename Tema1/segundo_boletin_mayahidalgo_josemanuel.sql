@@ -1,10 +1,13 @@
-﻿CREATE TABLE SOCIOS (
+﻿create database juvenil
+use juvenil
+
+create TABLE SOCIOS (
     DNI VARCHAR(10) PRIMARY KEY, -- DNI as Primary Key
     Nombre VARCHAR(20) NOT NULL,
     Direccion VARCHAR(20) NOT NULL,
     Penalizaciones INT DEFAULT 0
 );
-CREATE TABLE LIBROS (
+create TABLE LIBROS (
     RefLibro VARCHAR(10) PRIMARY KEY, -- RefLibro as Primary Key
     Nombre VARCHAR(30) NOT NULL,
     Autor VARCHAR(20) NOT NULL,
@@ -12,7 +15,7 @@ CREATE TABLE LIBROS (
     AñoPublicacion INT,
     Editorial VARCHAR(10)
 );
-CREATE TABLE PRESTAMOS (
+create TABLE PRESTAMOS (
     DNI VARCHAR(10) NOT NULL,
     RefLibro VARCHAR(10) NOT NULL,
     FechaPrestamo DATE NOT NULL,
@@ -75,24 +78,33 @@ VALUES('777-G','N-1', '07/12/01');
 
 INSERT INTO prestamos VALUES('111-A','N-1', '16/12/01',48);
 
-/*Ejercicio 1*/
+/*Ejercicio 1 (Despues de la creacion y tal)
+Realiza un procedimiento llamado listadocuatromasprestados que nos muestre por pantalla un listado 
+de los cuatro libros más prestados y los socios a los que han sido prestados con el siguiente formato:
+
+NombreLibro1	NumPrestamosLibro1 	GeneroLibro1	DNISocio1	FechaPrestamoalSocio1
+*/
 
 create or alter procedure listadocuatromasprestados
 as
 begin
     set nocount on;
+
+    -- a) La tabla Libros está vacía.
     if not exists (select 1 from libros)
     begin
-        raiserror('excepción: la tabla libros está vacía.', 16, 1);
+        raiserror('Excepción: La tabla Libros está vacía.', 16, 1);
         return;
     end
 
+    -- b) La tabla Socios está vacía.
     if not exists (select 1 from socios)
     begin
-        raiserror('excepción: la tabla socios está vacía.', 16, 1);
+        raiserror('Excepción: La tabla Socios está vacía.', 16, 1);
         return;
     end
 
+    -- 1. Identificar los 4 libros más prestados y sus detalles.
     declare @toplibros table (
         rank int,
         reflibro varchar(10),
@@ -111,23 +123,28 @@ begin
     from prestamos p
     inner join libros l on p.reflibro = l.reflibro
     group by l.reflibro, l.nombre, l.genero
-    order by numprestamos desc;
+    order by numprestamos desc, l.reflibro asc;
 
     declare @countlibros int = (select count(*) from @toplibros);
+
+    -- c) Hay menos de cuatro o 0 libros que hayan sido prestados.
     if @countlibros = 0
     begin
-        raiserror('excepción: hay cero libros prestados. no se puede generar el listado.', 16, 1);
+        raiserror('Excepción: Hay cero libros prestados. No se puede generar el listado.', 16, 1);
         return;
     end
     
     if @countlibros < 4
     begin
         print '------------------------------------------------------------';
-        print 'aviso: se han encontrado solo ' + cast(@countlibros as varchar) + ' libros con préstamos. se listarán todos.';
+        print 'AVISO: Solo se han encontrado ' + cast(@countlibros as varchar) + ' libros con préstamos. Se listarán todos.';
         print '------------------------------------------------------------';
     end
 
+    -- 2. Declaro el cursor para iterar a través de los top libros
     declare @reflibro_c varchar(10), @nombrelibro_c varchar(30), @numprestamos_c int, @genero_c varchar(10);
+    declare @dnisocio_c varchar(10), @fechaprestamo_c date;
+    declare @outputline varchar(200);
 
     declare topbookscursor cursor local forward_only read_only for
     select reflibro, nombrelibro, numprestamos, genero
@@ -137,19 +154,44 @@ begin
     open topbookscursor;
     fetch next from topbookscursor into @reflibro_c, @nombrelibro_c, @numprestamos_c, @genero_c;
 
+    -- Iteraro por cada uno de los libros más prestados
     while @@fetch_status = 0
     begin
-        select 
-            @nombrelibro_c as 'nombrelibro', 
-            @numprestamos_c as 'numprestamoslibro', 
-            @genero_c as 'generolibro';
+        -- Imprimo la línea de encabezado del libro
+        -- Formato: NombreLibroX NumPrestamosLibroX GeneroLibroX
+        set @outputline = 
+            @nombrelibro_c + replicate(' ', 31 - len(@nombrelibro_c)) + 
+            cast(@numprestamos_c as varchar) + replicate(' ', 20 - len(cast(@numprestamos_c as varchar))) + 
+            @genero_c;
+        print @outputline;
 
-        select
-            char(9) + p.dni as 'dnisocio',
-            p.fechaprestamo as 'fechaprestamoalsocio'
+        -- 3. Declaro el cursor para los préstamos de ese libro.
+        declare prestamoscursor cursor local forward_only read_only for
+        select p.dni, p.fechaprestamo
         from prestamos p
         where p.reflibro = @reflibro_c
         order by p.fechaprestamo desc;
+
+        open prestamoscursor;
+        fetch next from prestamoscursor into @dnisocio_c, @fechaprestamo_c;
+
+        -- Iteraro por cada préstamo de este libro
+        while @@fetch_status = 0
+        begin
+            -- Imprimo la línea de préstamo
+            -- Formato: DNISocioX FechaPrestamoalSocioX
+            set @outputline = 
+                replicate(' ', 50) +
+                @dnisocio_c + replicate(' ', 15 - len(@dnisocio_c)) + 
+                convert(varchar, @fechaprestamo_c, 103);
+
+            print @outputline;
+
+            fetch next from prestamoscursor into @dnisocio_c, @fechaprestamo_c;
+        end
+
+        close prestamoscursor;
+        deallocate prestamoscursor;
         
         print replicate('-', 60);
 
@@ -162,3 +204,135 @@ end
 
 print '--- COMPROBACIÓN 1: LISTADO PRINCIPAL (TOP 4) ---';
 exec listadocuatromasprestados;
+
+/*
+Ejercicio 2
+
+Partiendo del siguiente script, crea la BD correspondiente a los alumnos matriculados en algunos de los módulos de 1º y 2º curso del CFS y sus correspondientes notas:
+*/
+
+create database gestionAlumnos
+use gestionAlumnos
+
+-- Crear tabla ALUMNOS
+CREATE TABLE ALUMNOS (
+    DNI VARCHAR(10) NOT NULL PRIMARY KEY,
+    APENOM VARCHAR(30),
+    DIREC VARCHAR(30),
+    POBLA VARCHAR(15),
+    TELEF VARCHAR(10)
+);
+
+-- Crear tabla ASIGNATURAS
+CREATE TABLE ASIGNATURAS (
+    COD INT NOT NULL PRIMARY KEY,
+    NOMBRE VARCHAR(25)
+);
+
+-- Crear tabla NOTAS
+CREATE TABLE NOTAS (
+    DNI VARCHAR(10) NOT NULL,
+    COD INT NOT NULL,
+    NOTA INT,
+    CONSTRAINT FK_NOTAS_ALUMNOS FOREIGN KEY (DNI) REFERENCES ALUMNOS(DNI),
+    CONSTRAINT FK_NOTAS_ASIGNATURAS FOREIGN KEY (COD) REFERENCES ASIGNATURAS(COD)
+);
+
+-- Insertar datos en ASIGNATURAS
+INSERT INTO ASIGNATURAS VALUES (1, 'Prog. Leng. Estr.');
+INSERT INTO ASIGNATURAS VALUES (2, 'Sist. Informáticos');
+INSERT INTO ASIGNATURAS VALUES (3, 'Análisis');
+INSERT INTO ASIGNATURAS VALUES (4, 'FOL');
+INSERT INTO ASIGNATURAS VALUES (5, 'RET');
+INSERT INTO ASIGNATURAS VALUES (6, 'Entornos Gráficos');
+INSERT INTO ASIGNATURAS VALUES (7, 'Aplic. Entornos 4ªGen');
+
+-- Insertar datos en ALUMNOS
+INSERT INTO ALUMNOS VALUES ('12344345', 'Alcalde García, Elena', 'C/Las Matas, 24', 'Madrid', '917766545');
+INSERT INTO ALUMNOS VALUES ('4448242', 'Cerrato Vela, Luis', 'C/Mina 28 - 3A', 'Madrid', '916566545');
+INSERT INTO ALUMNOS VALUES ('56882942', 'Díaz Fernández, María', 'C/Luis Vives 25', 'Móstoles', '915577545');
+
+-- Insertar datos en NOTAS
+INSERT INTO NOTAS VALUES ('12344345', 1, 6);
+INSERT INTO NOTAS VALUES ('12344345', 2, 5);
+INSERT INTO NOTAS VALUES ('12344345', 3, 6);
+
+INSERT INTO NOTAS VALUES ('4448242', 4, 6);
+INSERT INTO NOTAS VALUES ('4448242', 5, 8);
+INSERT INTO NOTAS VALUES ('4448242', 6, 4);
+INSERT INTO NOTAS VALUES ('4448242', 7, 5);
+
+INSERT INTO NOTAS VALUES ('56882942', 5, 7);
+INSERT INTO NOTAS VALUES ('56882942', 6, 8);
+INSERT INTO NOTAS VALUES ('56882942', 7, 9);
+
+/*Diseña un procedimiento al que pasemos como parámetro de entrada el nombre de uno de los módulos existentes en la BD y visualice el nombre de los alumnos que lo han cursado junto a su nota.
+Al final del listado debe aparecer el nº de suspensos, aprobados, notables y sobresalientes.
+Asimismo, deben aparecer al final los nombres y notas de los alumnos que tengan la nota más alta y la más baja.
+Debes comprobar que las tablas tengan almacenada información y que exista el módulo cuyo nombre pasamos como parámetro al procedimiento.
+*/
+
+create or alter procedure mostrar_notas_por_modulo
+    @nombre_modulo varchar(50)
+as
+begin
+    set nocount on;
+
+    -- comprobar que existen datos y el módulo
+    if not exists (select 1 from alumnos) or 
+       not exists (select 1 from asignaturas) or
+       not exists (select 1 from notas)
+    begin
+        print '⚠️ faltan datos en las tablas.';
+        return;
+    end
+
+    if not exists (select 1 from asignaturas where nombre = @nombre_modulo)
+    begin
+        print '❌ el módulo no existe.';
+        return;
+    end
+
+    -- mostrar alumnos y notas
+    select a.apenom as alumno, n.nota
+    from notas n
+    join alumnos a on a.dni = n.dni
+    join asignaturas s on s.cod = n.cod
+    where s.nombre = @nombre_modulo
+    order by a.apenom;
+
+    -- resumen de calificaciones
+    select
+        sum(case when n.nota < 5 then 1 else 0 end) as suspensos,
+        sum(case when n.nota between 5 and 6 then 1 else 0 end) as aprobados,
+        sum(case when n.nota between 7 and 8 then 1 else 0 end) as notables,
+        sum(case when n.nota >= 9 then 1 else 0 end) as sobresalientes
+    from notas n
+    join asignaturas s on s.cod = n.cod
+    where s.nombre = @nombre_modulo;
+
+    -- alumnos con nota máxima y mínima
+    declare @max int, @min int;
+
+    select @max = max(nota), @min = min(nota)
+    from notas n
+    join asignaturas s on s.cod = n.cod
+    where s.nombre = @nombre_modulo;
+
+    select 'nota más alta' as tipo, a.apenom as alumno, n.nota
+    from notas n
+    join alumnos a on a.dni = n.dni
+    join asignaturas s on s.cod = n.cod
+    where s.nombre = @nombre_modulo and n.nota = @max
+
+    union all
+
+    select 'nota más baja', a.apenom, n.nota
+    from notas n
+    join alumnos a on a.dni = n.dni
+    join asignaturas s on s.cod = n.cod
+    where s.nombre = @nombre_modulo and n.nota = @min;
+end;
+
+exec mostrar_notas_por_modulo 'RET';
+
